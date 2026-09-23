@@ -72,7 +72,8 @@ func (h *EndpointHandler) Create(c *gin.Context) {
 	util.OK(c, api)
 }
 
-// Update handles PUT /projects/:projectId/apis/:id.
+// Update handles PUT /projects/:projectId/apis/:id. The payload is stored as
+// an unpublished draft; the live mock response keeps serving the old version.
 func (h *EndpointHandler) Update(c *gin.Context) {
 	projectID, ok := parseID(c)
 	if !ok {
@@ -94,7 +95,46 @@ func (h *EndpointHandler) Update(c *gin.Context) {
 	util.OK(c, api)
 }
 
-// Delete handles DELETE /projects/:projectId/apis/:id.
+// Publish handles POST /projects/:projectId/apis/:id/publish. The draft takes
+// over the live mock response immediately.
+func (h *EndpointHandler) Publish(c *gin.Context) {
+	projectID, ok := parseID(c)
+	if !ok {
+		return
+	}
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	api, err := h.svc.Publish(projectID, id, middleware.GetUserID(c), middleware.GetRole(c))
+	if err != nil {
+		util.Fail(c, err)
+		return
+	}
+	util.OK(c, api)
+}
+
+// DiscardDraft handles POST /projects/:projectId/apis/:id/discard-draft. The
+// draft is dropped and the live configuration stays as-is.
+func (h *EndpointHandler) DiscardDraft(c *gin.Context) {
+	projectID, ok := parseID(c)
+	if !ok {
+		return
+	}
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	api, err := h.svc.DiscardDraft(projectID, id, middleware.GetUserID(c), middleware.GetRole(c))
+	if err != nil {
+		util.Fail(c, err)
+		return
+	}
+	util.OK(c, api)
+}
+
+// Delete handles DELETE /projects/:projectId/apis/:id. Deleting an endpoint
+// with an unpublished draft requires ?force=true.
 func (h *EndpointHandler) Delete(c *gin.Context) {
 	projectID, ok := parseID(c)
 	if !ok {
@@ -104,7 +144,8 @@ func (h *EndpointHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.svc.Delete(projectID, id, middleware.GetUserID(c), middleware.GetRole(c)); err != nil {
+	force := c.Query("force") == "true"
+	if err := h.svc.Delete(projectID, id, middleware.GetUserID(c), middleware.GetRole(c), force); err != nil {
 		util.Fail(c, err)
 		return
 	}

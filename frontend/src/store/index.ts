@@ -131,10 +131,32 @@ export const useProjectStore = defineStore('project', {
       return response.data;
     },
 
-    async deleteAPI(projectId: string, id: string) {
-      const response = await mockApiApi.deleteAPI(projectId, id);
+    async deleteAPI(projectId: string, id: string, force = false) {
+      const response = await mockApiApi.deleteAPI(projectId, id, force);
       if (response.data.success) {
         this.apis = this.apis.filter((a) => a._id !== id);
+      }
+      return response.data;
+    },
+
+    async publishAPI(projectId: string, id: string) {
+      const response = await mockApiApi.publishAPI(projectId, id);
+      if (response.data.success) {
+        const index = this.apis.findIndex((a) => a._id === id);
+        if (index !== -1) {
+          this.apis[index] = response.data.data!;
+        }
+      }
+      return response.data;
+    },
+
+    async discardDraft(projectId: string, id: string) {
+      const response = await mockApiApi.discardDraft(projectId, id);
+      if (response.data.success) {
+        const index = this.apis.findIndex((a) => a._id === id);
+        if (index !== -1) {
+          this.apis[index] = response.data.data!;
+        }
       }
       return response.data;
     },

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/mockhub/mockhub/internal/constants"
 	"github.com/mockhub/mockhub/internal/dto"
@@ -68,35 +69,144 @@ func (s *EndpointService) Create(projectID, userID uint, role string, req dto.En
 	return e, nil
 }
 
-// Update edits an endpoint after checking access.
+// Update stores the edited configuration as an unpublished draft. The live
+// (published) columns stay untouched, so external mock requests keep being
+// served by the previous version until Publish is called.
 func (s *EndpointService) Update(projectID, id, userID uint, role string, req dto.EndpointRequest) (*model.MockAPI, error) {
 	e, err := s.Get(projectID, id, userID, role)
 	if err != nil {
 		return nil, err
 	}
-	e.Path = req.Path
-	e.Method = req.Method
-	e.StatusCode = req.StatusCode
-	e.ResponseBody = req.ResponseBody
-	e.ResponseHeaders = req.ResponseHeaders
-	e.Delay = req.Delay
-	e.Conditions = req.Conditions
+	if req.ResponseHeaders == nil {
+		req.ResponseHeaders = map[string]string{}
+	}
+	if req.Conditions == nil {
+		req.Conditions = []model.ConditionRule{}
+	}
+	// A draft identical to the live config carries no changes; clear it.
+	if draftMatchesLive(e, req) {
+		if e.HasDraft {
+			e.ClearDraft()
+			if err := s.endpoints.Update(e); err != nil {
+				return nil, err
+			}
+		}
+		return e, nil
+	}
+	now := time.Now()
+	e.HasDraft = true
+	e.DraftPath = req.Path
+	e.DraftMethod = req.Method
+	e.DraftStatusCode = req.StatusCode
+	e.DraftResponseBody = req.ResponseBody
+	e.DraftResponseHeaders = req.ResponseHeaders
+	e.DraftDelay = req.Delay
+	e.DraftConditions = req.Conditions
+	e.DraftSavedAt = &now
 	if err := s.endpoints.Update(e); err != nil {
 		return nil, err
 	}
+	s.logger.Info("endpoint draft saved", "project_id", projectID, "endpoint_id", e.ID)
 	return e, nil
 }
 
-// Delete removes an endpoint after checking access.
-func (s *EndpointService) Delete(projectID, id, userID uint, role string) error {
-	if _, err := s.Get(projectID, id, userID, role); err != nil {
+// Publish promotes the draft snapshot to the live configuration so the mock
+// engine immediately starts serving it, then clears the draft.
+func (s *EndpointService) Publish(projectID, id, userID uint, role string) (*model.MockAPI, error) {
+	e, err := s.Get(projectID, id, userID, role)
+	if err != nil {
+		return nil, err
+	}
+	if !e.HasDraft {
+		return nil, constants.NewAppError(constants.CodeBadRequest, constants.MsgNoDraft)
+	}
+	e.Path = e.DraftPath
+	e.Method = e.DraftMethod
+	e.StatusCode = e.DraftStatusCode
+	e.ResponseBody = e.DraftResponseBody
+	e.ResponseHeaders = e.DraftResponseHeaders
+	e.Delay = e.DraftDelay
+	e.Conditions = e.DraftConditions
+	now := time.Now()
+	e.PublishedAt = &now
+	e.ClearDraft()
+	if err := s.endpoints.Update(e); err != nil {
+		return nil, err
+	}
+	s.logger.Info("endpoint published", "project_id", projectID, "endpoint_id", e.ID, "method", e.Method, "path", e.Path)
+	return e, nil
+}
+
+// DiscardDraft drops the unpublished draft, reverting the editor to the
+// currently live configuration.
+func (s *EndpointService) DiscardDraft(projectID, id, userID uint, role string) (*model.MockAPI, error) {
+	e, err := s.Get(projectID, id, userID, role)
+	if err != nil {
+		return nil, err
+	}
+	if !e.HasDraft {
+		return nil, constants.NewAppError(constants.CodeBadRequest, constants.MsgNoDraft)
+	}
+	e.ClearDraft()
+	if err := s.endpoints.Update(e); err != nil {
+		return nil, err
+	}
+	s.logger.Info("endpoint draft discarded", "project_id", projectID, "endpoint_id", e.ID)
+	return e, nil
+}
+
+// Delete removes an endpoint after checking access. Endpoints that still hold
+// an unpublished draft are protected: deleting them requires force=true so a
+// configuration being actively worked on is not removed by accident.
+func (s *EndpointService) Delete(projectID, id, userID uint, role string, force bool) error {
+	e, err := s.Get(projectID, id, userID, role)
+	if err != nil {
 		return err
+	}
+	if e.HasDraft && !force {
+		return constants.NewAppError(constants.CodeConflict, constants.MsgDraftConflict)
 	}
 	if err := s.endpoints.Delete(id); err != nil {
 		return err
 	}
-	s.logger.Info("endpoint deleted", "project_id", projectID, "endpoint_id", id)
+	s.logger.Info("endpoint deleted", "project_id", projectID, "endpoint_id", id, "had_draft", e.HasDraft)
 	return nil
+}
+
+// draftMatchesLive reports whether the requested configuration equals the
+// currently published one.
+func draftMatchesLive(e *model.MockAPI, req dto.EndpointRequest) bool {
+	return e.Path == req.Path &&
+		e.Method == req.Method &&
+		e.StatusCode == req.StatusCode &&
+		e.ResponseBody == req.ResponseBody &&
+		e.Delay == req.Delay &&
+		stringMapEqual(e.ResponseHeaders, req.ResponseHeaders) &&
+		conditionsEqual(e.Conditions, req.Conditions)
+}
+
+func stringMapEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
+func conditionsEqual(a, b []model.ConditionRule) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // ImportOpenAPI parses an OpenAPI 2.0/3.0 document and creates endpoints

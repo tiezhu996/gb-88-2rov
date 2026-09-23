@@ -12,4 +12,6 @@ const (
 	MsgLoginFailed     = "用户名或密码错误"
 	MsgInternalError   = "服务器内部错误"
 	MsgTooManyRequests = "请求过于频繁，请稍后再试"
+	MsgNoDraft         = "当前接口没有未发布的草稿"
+	MsgDraftConflict   = "该接口存在未发布的草稿，确认删除将一并丢弃草稿"
 )

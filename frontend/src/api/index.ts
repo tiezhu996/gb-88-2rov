@@ -4,10 +4,12 @@ import type { User, Project, MockAPI, RequestLog, Pagination, ApiResponse } from
 // The Go backend wraps every response in { code, message, data }.
 // This interceptor normalizes it to the frontend's { success, data, message } shape.
 interface NormalizedError extends Error {
+  code?: number;
   response?: {
     data?: {
       error?: string;
       message?: string;
+      code?: number;
     };
   };
 }
@@ -33,7 +35,8 @@ api.interceptors.response.use(
         response.data = { success: true, data: body.data, message: body.message || 'ok' };
       } else {
         const err: NormalizedError = new Error(body.message || '请求失败');
-        err.response = { data: { error: body.message || '请求失败' } };
+        err.code = body.code;
+        err.response = { data: { error: body.message || '请求失败', code: body.code } };
         return Promise.reject(err);
       }
     }
@@ -78,7 +81,12 @@ export const mockApiApi = {
     api.post<ApiResponse<MockAPI>>(`/projects/${projectId}/apis`, data),
   updateAPI: (projectId: string, id: string, data: Partial<MockAPI>) =>
     api.put<ApiResponse<MockAPI>>(`/projects/${projectId}/apis/${id}`, data),
-  deleteAPI: (projectId: string, id: string) => api.delete<ApiResponse<void>>(`/projects/${projectId}/apis/${id}`)
+  deleteAPI: (projectId: string, id: string, force = false) =>
+    api.delete<ApiResponse<void>>(`/projects/${projectId}/apis/${id}`, { params: force ? { force: 'true' } : {} }),
+  publishAPI: (projectId: string, id: string) =>
+    api.post<ApiResponse<MockAPI>>(`/projects/${projectId}/apis/${id}/publish`),
+  discardDraft: (projectId: string, id: string) =>
+    api.post<ApiResponse<MockAPI>>(`/projects/${projectId}/apis/${id}/discard-draft`)
 };
 
 export const requestLogApi = {

@@ -22,6 +22,7 @@ docker compose up -d --build
 
 - Mock 项目管理：创建项目自动生成 Base URL（`/mock/{projectId}`）
 - 接口配置：路径 / 方法 / 状态码 / 响应体（JSON）/ 响应头 / 延迟
+- 草稿发布：编辑保存为草稿，线上仍按上一版响应；列表标记「未发布」，确认后一键发布接管线上，也可放弃草稿恢复线上版本；删除接口前会对未发布草稿二次确认
 - 动态响应：`{{name.fullName}}`、`{{internet.email}}`、`{{repeat 5|...}}` 等 gofakeit 模板
 - 条件响应：按 query/body 字段匹配返回不同响应（如 `role=admin`）
 - 请求日志：记录方法、路径、Headers、Body、Query、响应状态与响应体
@@ -136,7 +137,9 @@ npm run dev
 | GET/POST | /api/v1/projects | 项目列表 / 创建 |
 | GET/PUT/DELETE | /api/v1/projects/:id | 项目详情 / 更新 / 删除 |
 | GET/POST | /api/v1/projects/:projectId/apis | 接口列表 / 新建 |
-| GET/PUT/DELETE | /api/v1/projects/:projectId/apis/:id | 接口详情 / 更新 / 删除 |
+| GET/PUT/DELETE | /api/v1/projects/:projectId/apis/:id | 接口详情 / 保存草稿（PUT）/ 删除（有草稿需 ?force=true） |
+| POST | /api/v1/projects/:projectId/apis/:id/publish | 发布草稿（立即接管线上响应） |
+| POST | /api/v1/projects/:projectId/apis/:id/discard-draft | 放弃草稿（恢复线上版本） |
 | POST | /api/v1/projects/:projectId/swagger/import | 导入 OpenAPI |
 | GET/DELETE | /api/v1/projects/:projectId/logs | 请求日志 / 清空 |
 | ANY | /mock/:projectId/*path | 公开 Mock 引擎 |

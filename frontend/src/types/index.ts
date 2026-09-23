@@ -32,6 +32,17 @@ export interface MockAPI {
   delay: number;
   conditions: ConditionRule[];
   createdAt: string;
+  publishedAt?: string;
+  // Unpublished draft snapshot (present when hasDraft is true).
+  hasDraft: boolean;
+  draftPath?: string;
+  draftMethod?: string;
+  draftStatusCode?: number;
+  draftResponseBody?: string;
+  draftResponseHeaders?: Record<string, string>;
+  draftDelay?: number;
+  draftConditions?: ConditionRule[];
+  draftSavedAt?: string;
 }
 
 export interface RequestLog {
