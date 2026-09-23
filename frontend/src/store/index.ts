@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import type { User, Project, MockAPI, RequestLog } from '../types';
 import { authApi, projectApi, mockApiApi, requestLogApi } from '../api';
+import type { EndpointPayload } from '../api';
 
 interface AuthState {
   token: string | null;
@@ -120,19 +121,41 @@ export const useProjectStore = defineStore('project', {
       return response.data;
     },
 
-    async updateAPI(projectId: string, id: string, data: Partial<MockAPI>) {
-      const response = await mockApiApi.updateAPI(projectId, id, data);
+    async saveAPIDraft(projectId: string, id: string, data: EndpointPayload) {
+      const response = await mockApiApi.saveAPIDraft(projectId, id, data);
       if (response.data.success) {
-        const index = this.apis.findIndex((a) => a._id === id);
-        if (index !== -1) {
-          this.apis[index] = response.data.data!;
-        }
+        this.upsertAPI(response.data.data!);
       }
       return response.data;
     },
 
-    async deleteAPI(projectId: string, id: string) {
-      const response = await mockApiApi.deleteAPI(projectId, id);
+    async publishAPIDraft(projectId: string, id: string, data?: EndpointPayload) {
+      const response = await mockApiApi.publishAPIDraft(projectId, id, data);
+      if (response.data.success) {
+        this.upsertAPI(response.data.data!);
+      }
+      return response.data;
+    },
+
+    async discardAPIDraft(projectId: string, id: string) {
+      const response = await mockApiApi.discardAPIDraft(projectId, id);
+      if (response.data.success) {
+        this.upsertAPI(response.data.data!);
+      }
+      return response.data;
+    },
+
+    upsertAPI(api: MockAPI) {
+      const index = this.apis.findIndex((a) => a._id === api._id);
+      if (index === -1) {
+        this.apis.unshift(api);
+      } else {
+        this.apis[index] = api;
+      }
+    },
+
+    async deleteAPI(projectId: string, id: string, force = false) {
+      const response = await mockApiApi.deleteAPI(projectId, id, force);
       if (response.data.success) {
         this.apis = this.apis.filter((a) => a._id !== id);
       }

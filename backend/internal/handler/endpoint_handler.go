@@ -72,8 +72,8 @@ func (h *EndpointHandler) Create(c *gin.Context) {
 	util.OK(c, api)
 }
 
-// Update handles PUT /projects/:projectId/apis/:id.
-func (h *EndpointHandler) Update(c *gin.Context) {
+// SaveDraft handles PUT /projects/:projectId/apis/:id/draft.
+func (h *EndpointHandler) SaveDraft(c *gin.Context) {
 	projectID, ok := parseID(c)
 	if !ok {
 		return
@@ -86,7 +86,7 @@ func (h *EndpointHandler) Update(c *gin.Context) {
 	if !util.BindAndValidate(c, &req) {
 		return
 	}
-	api, err := h.svc.Update(projectID, id, middleware.GetUserID(c), middleware.GetRole(c), req)
+	api, err := h.svc.SaveDraft(projectID, id, middleware.GetUserID(c), middleware.GetRole(c), req)
 	if err != nil {
 		util.Fail(c, err)
 		return
@@ -94,7 +94,53 @@ func (h *EndpointHandler) Update(c *gin.Context) {
 	util.OK(c, api)
 }
 
-// Delete handles DELETE /projects/:projectId/apis/:id.
+// PublishDraft handles POST /projects/:projectId/apis/:id/publish.
+// The request body is optional: when present, the payload is saved as the
+// draft before publishing, supporting a one-click "save & publish".
+func (h *EndpointHandler) PublishDraft(c *gin.Context) {
+	projectID, ok := parseID(c)
+	if !ok {
+		return
+	}
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req *dto.EndpointRequest
+	if c.Request.ContentLength != 0 {
+		req = &dto.EndpointRequest{}
+		if !util.BindAndValidate(c, req) {
+			return
+		}
+	}
+	api, err := h.svc.PublishDraft(projectID, id, middleware.GetUserID(c), middleware.GetRole(c), req)
+	if err != nil {
+		util.Fail(c, err)
+		return
+	}
+	util.OK(c, api)
+}
+
+// DiscardDraft handles DELETE /projects/:projectId/apis/:id/draft.
+func (h *EndpointHandler) DiscardDraft(c *gin.Context) {
+	projectID, ok := parseID(c)
+	if !ok {
+		return
+	}
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	api, err := h.svc.DiscardDraft(projectID, id, middleware.GetUserID(c), middleware.GetRole(c))
+	if err != nil {
+		util.Fail(c, err)
+		return
+	}
+	util.OK(c, api)
+}
+
+// Delete handles DELETE /projects/:projectId/apis/:id. Set force=true to
+// delete an endpoint that still has an unpublished draft.
 func (h *EndpointHandler) Delete(c *gin.Context) {
 	projectID, ok := parseID(c)
 	if !ok {
@@ -104,7 +150,8 @@ func (h *EndpointHandler) Delete(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if err := h.svc.Delete(projectID, id, middleware.GetUserID(c), middleware.GetRole(c)); err != nil {
+	force := c.Query("force") == "true"
+	if err := h.svc.Delete(projectID, id, middleware.GetUserID(c), middleware.GetRole(c), force); err != nil {
 		util.Fail(c, err)
 		return
 	}

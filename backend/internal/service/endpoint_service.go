@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/mockhub/mockhub/internal/constants"
 	"github.com/mockhub/mockhub/internal/dto"
@@ -68,35 +69,92 @@ func (s *EndpointService) Create(projectID, userID uint, role string, req dto.En
 	return e, nil
 }
 
-// Update edits an endpoint after checking access.
-func (s *EndpointService) Update(projectID, id, userID uint, role string, req dto.EndpointRequest) (*model.MockAPI, error) {
+// SaveDraft stores an unpublished edit without changing the live config, so
+// external requests keep receiving the previously published response.
+func (s *EndpointService) SaveDraft(projectID, id, userID uint, role string, req dto.EndpointRequest) (*model.MockAPI, error) {
 	e, err := s.Get(projectID, id, userID, role)
 	if err != nil {
 		return nil, err
 	}
-	e.Path = req.Path
-	e.Method = req.Method
-	e.StatusCode = req.StatusCode
-	e.ResponseBody = req.ResponseBody
-	e.ResponseHeaders = req.ResponseHeaders
-	e.Delay = req.Delay
-	e.Conditions = req.Conditions
-	if err := s.endpoints.Update(e); err != nil {
+	draft := draftFromRequest(req, time.Now())
+	if err := s.endpoints.SaveDraft(e.ID, draft); err != nil {
 		return nil, err
 	}
-	return e, nil
+	s.logger.Info("endpoint draft saved", "project_id", projectID, "endpoint_id", e.ID)
+	return s.endpoints.FindByID(e.ID)
 }
 
-// Delete removes an endpoint after checking access.
-func (s *EndpointService) Delete(projectID, id, userID uint, role string) error {
-	if _, err := s.Get(projectID, id, userID, role); err != nil {
+// PublishDraft activates the draft immediately. When req is non-nil it is
+// saved as the draft first, allowing "save and publish" in one click.
+func (s *EndpointService) PublishDraft(projectID, id, userID uint, role string, req *dto.EndpointRequest) (*model.MockAPI, error) {
+	e, err := s.Get(projectID, id, userID, role)
+	if err != nil {
+		return nil, err
+	}
+	draft := e.Draft
+	if req != nil {
+		draft = draftFromRequest(*req, time.Now())
+	}
+	if draft == nil {
+		return nil, constants.NewAppError(constants.CodeBadRequest, "没有可发布的草稿")
+	}
+	if err := s.endpoints.PublishDraft(e.ID, draft); err != nil {
+		return nil, err
+	}
+	s.logger.Info("endpoint draft published", "project_id", projectID, "endpoint_id", e.ID, "method", draft.Method, "path", draft.Path)
+	return s.endpoints.FindByID(e.ID)
+}
+
+// DiscardDraft throws away the unpublished draft and keeps the live version.
+func (s *EndpointService) DiscardDraft(projectID, id, userID uint, role string) (*model.MockAPI, error) {
+	e, err := s.Get(projectID, id, userID, role)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.endpoints.DiscardDraft(e.ID); err != nil {
+		return nil, err
+	}
+	s.logger.Info("endpoint draft discarded", "project_id", projectID, "endpoint_id", e.ID)
+	return s.endpoints.FindByID(e.ID)
+}
+
+// Delete removes an endpoint after checking access. An endpoint carrying an
+// unpublished draft is rejected unless force is set, to avoid wiping a config
+// still under joint debugging.
+func (s *EndpointService) Delete(projectID, id, userID uint, role string, force bool) error {
+	e, err := s.Get(projectID, id, userID, role)
+	if err != nil {
 		return err
+	}
+	if e.HasDraft && !force {
+		return constants.NewAppError(constants.CodeConflict, "该接口存在未发布草稿，请先发布或放弃草稿，或确认强制删除")
 	}
 	if err := s.endpoints.Delete(id); err != nil {
 		return err
 	}
 	s.logger.Info("endpoint deleted", "project_id", projectID, "endpoint_id", id)
 	return nil
+}
+
+func draftFromRequest(req dto.EndpointRequest, savedAt time.Time) *model.EndpointDraft {
+	headers := req.ResponseHeaders
+	if headers == nil {
+		headers = map[string]string{}
+	}
+	conditions := req.Conditions
+	if conditions == nil {
+		conditions = []model.ConditionRule{}
+	}
+	return &model.EndpointDraft{
+		Path:            req.Path,
+		Method:          req.Method,
+		StatusCode:      req.StatusCode,
+		ResponseBody:    req.ResponseBody,
+		ResponseHeaders: headers,
+		Delay:           req.Delay,
+		Conditions:      conditions,
+		UpdatedAt:       savedAt,
+	}
 }
 
 // ImportOpenAPI parses an OpenAPI 2.0/3.0 document and creates endpoints

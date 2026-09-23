@@ -59,17 +59,8 @@ func TestEndpointServiceCRUDAndAccess(t *testing.T) {
 		}
 	})
 
-	t.Run("update", func(t *testing.T) {
-		updated, err := svc.Update(project.ID, created.ID, dev.ID, RoleDev, dto.EndpointRequest{
-			Path: "/api/users/:id", Method: "PUT", StatusCode: 200, ResponseBody: `{"updated":true}`,
-		})
-		if err != nil || updated.Method != "PUT" {
-			t.Fatalf("Update = %+v, %v", updated, err)
-		}
-	})
-
 	t.Run("delete then missing", func(t *testing.T) {
-		if err := svc.Delete(project.ID, created.ID, dev.ID, RoleDev); err != nil {
+		if err := svc.Delete(project.ID, created.ID, dev.ID, RoleDev, false); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
 		if _, err := svc.Get(project.ID, created.ID, dev.ID, RoleDev); !errors.Is(err, repository.ErrNotFound) {

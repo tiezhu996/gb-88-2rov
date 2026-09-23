@@ -15,7 +15,9 @@ func registerEndpoint(api *gin.RouterGroup, h *Handlers, cfg *config.Config, log
 		apis.GET("", h.Endpoint.List)
 		apis.POST("", h.Endpoint.Create)
 		apis.GET("/:id", h.Endpoint.Get)
-		apis.PUT("/:id", h.Endpoint.Update)
+		apis.PUT("/:id/draft", h.Endpoint.SaveDraft)
+		apis.POST("/:id/publish", h.Endpoint.PublishDraft)
+		apis.DELETE("/:id/draft", h.Endpoint.DiscardDraft)
 		apis.DELETE("/:id", h.Endpoint.Delete)
 	}
 

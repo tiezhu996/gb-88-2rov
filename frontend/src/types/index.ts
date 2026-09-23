@@ -21,6 +21,17 @@ export interface ConditionRule {
   statusCode: number;
 }
 
+export interface EndpointDraft {
+  path: string;
+  method: string;
+  statusCode: number;
+  responseBody: string;
+  responseHeaders: Record<string, string>;
+  delay: number;
+  conditions: ConditionRule[];
+  updatedAt: string;
+}
+
 export interface MockAPI {
   _id: string;
   projectId: string;
@@ -31,6 +42,8 @@ export interface MockAPI {
   responseHeaders: Record<string, string>;
   delay: number;
   conditions: ConditionRule[];
+  hasDraft: boolean;
+  draft?: EndpointDraft;
   createdAt: string;
 }
 
